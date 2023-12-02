@@ -32,6 +32,7 @@ static NimBLEUUID uuidCharaPeripheralControlParameters("2a04");
 int stk_l;
 bool stk_l_init;
 
+/*车辆控制*/
 void VehicleControl(uint8_t *pData, size_t length)
 {
   xboxNotif.update(pData, length);
