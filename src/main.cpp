@@ -23,6 +23,64 @@ static NimBLEUUID uuidCharaHidInformation("2a4a");
 static NimBLEUUID uuidCharaPeripheralAppearance("2a01");
 static NimBLEUUID uuidCharaPeripheralControlParameters("2a04");
 
+// 定义控制 Pin
+#define PIN_MOVE 25   // 移动控制
+#define PIN_MOVE_R 26 // 倒车控制
+#define PIN_TURN 27   // 左转
+#define PIN_TURN_R 14 // 右转
+#define PIN_LIGHT 12  // 状态灯
+int stk_l;
+bool stk_l_init;
+
+void VehicleControl(uint8_t *pData, size_t length)
+{
+  xboxNotif.update(pData, length);
+
+  // 右扳机油门
+  if (xboxNotif.trigRT || xboxNotif.trigLT)
+  {
+    analogWrite(PIN_MOVE, ceil(xboxNotif.trigRT / 4));
+    // 左扳机倒车
+    if (xboxNotif.trigLT)
+    {
+      analogWrite(PIN_MOVE, ceil(xboxNotif.trigLT / 4));
+      digitalWrite(PIN_MOVE_R, 1);
+    }
+    else
+    {
+      digitalWrite(PIN_MOVE_R, 0);
+    }
+  }
+  else
+  {
+    analogWrite(PIN_MOVE, 0);
+    digitalWrite(PIN_MOVE_R, 0);
+  }
+
+  // 转向
+  if (!stk_l_init)
+  {
+    stk_l = 33000;
+    stk_l_init = true;
+  }
+
+  // 左转
+  if (xboxNotif.joyLHori < stk_l - 18000)
+  {
+    digitalWrite(PIN_TURN, 1);
+  }
+  else if (xboxNotif.joyLHori > stk_l + 18000)
+  {
+    digitalWrite(PIN_TURN, 1);
+    digitalWrite(PIN_TURN_R, 1);
+  }
+  else
+  {
+    digitalWrite(PIN_TURN, 0);
+    digitalWrite(PIN_TURN_R, 0);
+  }
+}
+
 class ClientCallbacks : public NimBLEClientCallbacks
 {
   void onConnect(NimBLEClient *pClient)
@@ -130,31 +188,7 @@ unsigned long printInterval = 100UL;
 void notifyCB(NimBLERemoteCharacteristic *pRemoteCharacteristic, uint8_t *pData,
               size_t length, bool isNotify)
 {
-  static bool isPrinting = false;
-  static unsigned long printedAt = 0;
-  if (isPrinting || millis() - printedAt < printInterval)
-    return;
-  isPrinting = true;
-  std::string str = (isNotify == true) ? "Notification" : "Indication";
-  str += " from ";
-  /** NimBLEAddress and NimBLEUUID have std::string operators */
-  str += std::string(
-      pRemoteCharacteristic->getRemoteService()->getClient()->getPeerAddress());
-  str += ": Service = " +
-         std::string(pRemoteCharacteristic->getRemoteService()->getUUID());
-  str += ", Characteristic = " + std::string(pRemoteCharacteristic->getUUID());
-  // str += ", Value = " + std::string((char*)pData, length);
-  Serial.println(str.c_str());
-  Serial.print("value: ");
-  for (int i = 0; i < length; ++i)
-  {
-    Serial.printf(" %02x", pData[i]);
-  }
-  Serial.println("");
-  xboxNotif.update(pData, length);
-  Serial.print(xboxNotif.toString());
-  printedAt = millis();
-  isPrinting = false;
+  VehicleControl(pData, length);
 }
 
 void scanEndedCB(NimBLEScanResults results)
@@ -329,6 +363,15 @@ void setup()
   NimBLEDevice::setOwnAddrType(BLE_OWN_ADDR_RANDOM);
   NimBLEDevice::setSecurityAuth(true, true, true);
   NimBLEDevice::setPower(ESP_PWR_LVL_P9); /** +9db */
+
+  // 初始化针脚
+  pinMode(PIN_LIGHT, OUTPUT);
+  pinMode(PIN_MOVE, OUTPUT);
+  pinMode(PIN_MOVE_R, OUTPUT);
+  pinMode(PIN_TURN, OUTPUT);
+  pinMode(PIN_TURN_R, OUTPUT);
+
+  stk_l_init = false;
 }
 
 void loop()
