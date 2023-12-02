@@ -1,7 +1,4 @@
 #include <Arduino.h>
-
-// Reference: https://github.com/h2zero/NimBLE-Arduino/blob/master/examples/NimBLE_Client/NimBLE_Client.ino
-
 #include <NimBLEDevice.h>
 #include <XboxControllerNotificationParser.h>
 
@@ -15,7 +12,7 @@ bool scanning = false;
 bool connected = false;
 static uint32_t scanTime = 0; /** 0 = scan forever */
 
-static NimBLEAddress targetDeviceAddress("44:16:22:5e:b2:d4"); // my controller
+static NimBLEAddress targetDeviceAddress("98:7A:14:29:10:41"); // 手柄蓝牙地址
 
 static NimBLEUUID uuidServiceGeneral("1801");
 static NimBLEUUID uuidServiceBattery("180f");
@@ -312,17 +309,6 @@ bool connectToServer(NimBLEAdvertisedDevice *advDevice)
   return true;
 }
 
-void setup()
-{
-  Serial.begin(115200);
-  Serial.println("Starting NimBLE Client");
-  /** Initialize NimBLE, no device name spcified as we are not advertising */
-  NimBLEDevice::init("");
-  NimBLEDevice::setOwnAddrType(BLE_OWN_ADDR_RANDOM);
-  NimBLEDevice::setSecurityAuth(true, true, true);
-  NimBLEDevice::setPower(ESP_PWR_LVL_P9); /** +9db */
-}
-
 void startScan()
 {
   scanning = true;
@@ -332,6 +318,17 @@ void startScan()
   pScan->setWindow(15);
   Serial.println("Start scan");
   pScan->start(scanTime, scanEndedCB);
+}
+
+void setup()
+{
+  Serial.begin(115200);
+  Serial.println("Starting NimBLE Client");
+  /** Initialize NimBLE, no device name spcified as we are not advertising */
+  NimBLEDevice::init("");
+  NimBLEDevice::setOwnAddrType(BLE_OWN_ADDR_RANDOM);
+  NimBLEDevice::setSecurityAuth(true, true, true);
+  NimBLEDevice::setPower(ESP_PWR_LVL_P9); /** +9db */
 }
 
 void loop()
@@ -356,6 +353,6 @@ void loop()
     }
   }
 
-  // Serial.println("scanning:" + String(scanning) + " connected:" + String(connected) + " advDevice is nullptr:" + String(advDevice == nullptr));
+  Serial.println("scanning:" + String(scanning) + " connected:" + String(connected) + " advDevice is nullptr:" + String(advDevice == nullptr));
   delay(2000);
 }
