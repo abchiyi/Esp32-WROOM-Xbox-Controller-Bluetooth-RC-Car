@@ -32,7 +32,61 @@ static NimBLEUUID uuidCharaPeripheralControlParameters("2a04");
 int stk_l;
 bool stk_l_init;
 
-/*车辆控制*/
+void setLight(int status)
+{
+  digitalWrite(PIN_LIGHT, status);
+}
+
+void lightFast()
+{
+  analogWrite(PIN_LIGHT, 255);
+  vTaskDelay(100);
+  analogWrite(PIN_LIGHT, 0);
+}
+
+void lightSlow()
+{
+  for (int i = 0; i <= 255; i = i + 5)
+  {
+    analogWrite(PIN_LIGHT, i);
+    vTaskDelay(3);
+  }
+  vTaskDelay(100);
+
+  for (int i = 255; i >= 0; i = i - 5)
+  {
+    analogWrite(PIN_LIGHT, i);
+    vTaskDelay(3);
+  }
+}
+
+/* 灯光控制
+   缓慢持续闪烁未连接到手柄
+   间隔快速双闪已连接到手柄
+*/
+void LightTask(void *pt)
+{
+
+  while (true)
+  {
+    if (connected)
+    {
+      lightFast();
+      vTaskDelay(100);
+      lightFast();
+      vTaskDelay(2000);
+    }
+    else
+    {
+      lightSlow();
+      vTaskDelay(200);
+      lightSlow();
+      vTaskDelay(200);
+    }
+  }
+}
+
+/* 车辆控制 */
 void VehicleControl(uint8_t *pData, size_t length)
 {
   xboxNotif.update(pData, length);
@@ -373,6 +427,7 @@ void setup()
   pinMode(PIN_TURN_R, OUTPUT);
 
   stk_l_init = false;
+  xTaskCreate(LightTask, "status light", 1024, NULL, 1, NULL);
 }
 
 void loop()
