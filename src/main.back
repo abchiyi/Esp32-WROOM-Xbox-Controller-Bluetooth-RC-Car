@@ -1,0 +1,349 @@
+#include <math.h>
+#include <Arduino.h>
+#include <NimBLEDevice.h>                     // 蓝牙库
+#include <XboxControllerNotificationParser.h> // Xbox 手柄解析库
+
+// 定义控制 Pin
+#define PIN_MOVE 25   // 移动控制
+#define PIN_MOVE_R 26 // 倒车控制
+#define PIN_TURN 27   // 左转
+#define PIN_TURN_R 14 // 右转
+#define PIN_LIGHT 12  // 状态灯
+
+int stk_l;
+bool stk_l_init;
+
+bool connected = false; // 连接状态
+bool scanning = false;  // 扫描状态
+
+static uint32_t scanTime = 0; /** 0 = scan forever */
+
+static XboxControllerNotificationParser xboxNotif;
+
+void scanEndedCB(NimBLEScanResults results);
+static NimBLEAdvertisedDevice *advDevice;
+static NimBLEAddress targetDeviceAddress("98:7A:14:29:10:41"); // 控制器地址
+static NimBLEUUID uuidServiceGeneral("1801");
+static NimBLEUUID uuidServiceBattery("180f");
+static NimBLEUUID uuidServiceHid("1812");
+static NimBLEUUID uuidCharaReport("2a4d");
+static NimBLEUUID uuidCharaPnp("2a50");
+static NimBLEUUID uuidCharaHidInformation("2a4a");
+static NimBLEUUID uuidCharaPeripheralAppearance("2a01");
+static NimBLEUUID uuidCharaPeripheralControlParameters("2a04");
+
+class ClientCallbacks : public NimBLEClientCallbacks
+{
+  void onConnect(NimBLEClient *pClient)
+  {
+    Serial.println("Connected");
+    connected = true;
+    // pClient->updateConnParams(120,120,0,60);
+  };
+
+  void onDisconnect(NimBLEClient *pClient)
+  {
+    Serial.print(pClient->getPeerAddress().toString().c_str());
+    Serial.println(" Disconnected");
+    connected = false;
+  };
+
+  /** Called when the peripheral requests a change to the connection parameters.
+   *  Return true to accept and apply them or false to reject and keep
+   *  the currently used parameters. Default will return true.
+   */
+  bool onConnParamsUpdateRequest(NimBLEClient *pClient,
+                                 const ble_gap_upd_params *params)
+  {
+    Serial.print("onConnParamsUpdateRequest");
+    if (params->itvl_min < 24)
+    { /** 1.25ms units */
+      return false;
+    }
+    else if (params->itvl_max > 40)
+    { /** 1.25ms units */
+      return false;
+    }
+    else if (params->latency > 2)
+    { /** Number of intervals allowed to skip */
+      return false;
+    }
+    else if (params->supervision_timeout > 100)
+    { /** 10ms units */
+      return false;
+    }
+
+    return true;
+  };
+
+  /********************* Security handled here **********************
+  ****** Note: these are the same return values as defaults ********/
+  uint32_t onPassKeyRequest()
+  {
+    Serial.println("Client Passkey Request");
+    /** return the passkey to send to the server */
+    return 0;
+  };
+
+  bool onConfirmPIN(uint32_t pass_key)
+  {
+    Serial.print("The passkey YES/NO number: ");
+    Serial.println(pass_key);
+    /** Return false if passkeys don't match. */
+    return true;
+  };
+
+  /** Pairing process complete, we can check the results in ble_gap_conn_desc */
+  void onAuthenticationComplete(ble_gap_conn_desc *desc)
+  {
+    Serial.println("onAuthenticationComplete");
+    if (!desc->sec_state.encrypted)
+    {
+      Serial.println("Encrypt connection failed - disconnecting");
+      /** Find the client with the connection handle provided in desc */
+      NimBLEDevice::getClientByID(desc->conn_handle)->disconnect();
+      return;
+    }
+  };
+};
+
+static ClientCallbacks clientCB;
+
+/** 定义一个类来处理收到广播时的回调 */
+class AdvertisedDeviceCallbacks : public NimBLEAdvertisedDeviceCallbacks
+{
+  void onResult(NimBLEAdvertisedDevice *advertisedDevice)
+  {
+    Serial.print("Advertised Device found: ");
+    Serial.println(advertisedDevice->toString().c_str());
+    Serial.printf("name:%s, address:%s\n", advertisedDevice->getName().c_str(),
+                  advertisedDevice->getAddress().toString().c_str());
+    Serial.printf("uuidService:%s\n",
+                  advertisedDevice->haveServiceUUID()
+                      ? advertisedDevice->getServiceUUID().toString().c_str()
+                      : "none");
+
+    if (advertisedDevice->getAddress().equals(targetDeviceAddress))
+    // if (advertisedDevice->isAdvertisingService(uuidServiceHid))
+    {
+      Serial.println("找到目标设备");
+      /** stop scan before connecting */
+      NimBLEDevice::getScan()->stop();
+      /** Save the device reference in a global for the client to use*/
+      advDevice = advertisedDevice;
+    }
+  };
+};
+
+/** Notification / Indication receiving handler callback */
+void notifyCB(NimBLERemoteCharacteristic *pRemoteCharacteristic, uint8_t *pData,
+              size_t length, bool isNotify)
+{
+  xboxNotif.update(pData, length);
+
+  // 右扳机油门
+  if (xboxNotif.trigRT || xboxNotif.trigLT)
+  {
+    analogWrite(PIN_MOVE, ceil(xboxNotif.trigRT / 4));
+    // 左扳机倒车
+    if (xboxNotif.trigLT)
+    {
+      analogWrite(PIN_MOVE, ceil(xboxNotif.trigLT / 4));
+      digitalWrite(PIN_MOVE_R, 1);
+    }
+    else
+    {
+      digitalWrite(PIN_MOVE_R, 0);
+    }
+  }
+  else
+  {
+    analogWrite(PIN_MOVE, 0);
+    digitalWrite(PIN_MOVE_R, 0);
+  }
+
+  // 转向
+  if (!stk_l_init)
+  {
+    stk_l = 33000;
+    stk_l_init = true;
+  }
+
+  // 左转
+  if (xboxNotif.joyLHori < stk_l - 18000)
+  {
+    digitalWrite(PIN_TURN, 1);
+  }
+  else if (xboxNotif.joyLHori > stk_l + 18000)
+  {
+    digitalWrite(PIN_TURN, 1);
+    digitalWrite(PIN_TURN_R, 1);
+  }
+  else
+  {
+    digitalWrite(PIN_TURN, 0);
+    digitalWrite(PIN_TURN_R, 0);
+  }
+}
+
+void scanEndedCB(NimBLEScanResults results)
+{
+  Serial.println("Scan Ended");
+  scanning = false;
+}
+
+void startScan()
+{
+  scanning = true;
+  auto pScan = NimBLEDevice::getScan();
+  pScan->setAdvertisedDeviceCallbacks(new AdvertisedDeviceCallbacks());
+  pScan->setInterval(45);
+  pScan->setWindow(15);
+  Serial.println("开始扫描");
+  pScan->start(scanTime, scanEndedCB);
+}
+
+void charaSubscribeNotification(NimBLERemoteCharacteristic *pChara)
+{
+  if (pChara->canNotify())
+  {
+    Serial.println(" canNotify ");
+    if (pChara->subscribe(true, notifyCB, true))
+    {
+      Serial.println("set notifyCb");
+    }
+    else
+    {
+      Serial.println("failed to subscribe");
+    }
+  }
+}
+
+bool afterConnect(NimBLEClient *pClient)
+{
+  for (auto pService : *pClient->getServices(true))
+  {
+    auto sUuid = pService->getUUID();
+    if (!sUuid.equals(uuidServiceHid))
+    {
+      continue; // skip
+    }
+    Serial.println(pService->toString().c_str());
+    for (auto pChara : *pService->getCharacteristics(true))
+    {
+      charaSubscribeNotification(pChara);
+    }
+  }
+
+  return true;
+}
+
+bool connectToServer(NimBLEAdvertisedDevice *advDevice)
+{
+  NimBLEClient *pClient = nullptr;
+
+  /** Check if we have a client we should reuse first **/
+  if (NimBLEDevice::getClientListSize())
+  {
+    pClient = NimBLEDevice::getClientByPeerAddress(advDevice->getAddress());
+    if (pClient)
+    {
+      pClient->connect();
+    }
+  }
+
+  /** No client to reuse? Create a new one. */
+  if (!pClient)
+  {
+    if (NimBLEDevice::getClientListSize() >= NIMBLE_MAX_CONNECTIONS)
+    {
+      Serial.println("Max clients reached - no more connections available");
+      return false;
+    }
+
+    pClient = NimBLEDevice::createClient();
+
+    Serial.println("New client created.");
+
+    pClient->setClientCallbacks(&clientCB, false);
+    pClient->setConnectTimeout(5);
+    pClient->connect(advDevice, false);
+  }
+
+  int retryCount = 5;
+  while (!pClient->isConnected())
+  {
+    if (retryCount <= 0)
+    {
+      return false;
+    }
+    else
+    {
+      Serial.println("重连." + String(millis()));
+      delay(1000);
+    }
+    pClient->connect(true);
+    --retryCount;
+  }
+
+  // 输出连接信息
+  Serial.print("Connected to :");
+  Serial.println(pClient->getPeerAddress().toString().c_str());
+  Serial.print("RSSI :");
+  Serial.print(pClient->getRssi());
+
+  bool result = afterConnect(pClient);
+  if (!result)
+  {
+    return result;
+  }
+
+  Serial.println("Connection is successful .");
+  return true;
+}
+
+void setup()
+{
+  Serial.begin(115200);
+  Serial.println("初始化车辆");
+
+  // 初始化蓝牙服务
+  NimBLEDevice::init("");                            // 车辆名称
+  NimBLEDevice::setPower(ESP_PWR_LVL_P9);            // 设置功率
+  NimBLEDevice::setSecurityAuth(true, true, true);   // 允许绑定
+  NimBLEDevice::setOwnAddrType(BLE_OWN_ADDR_RANDOM); // 设置地址类型
+
+  // 初始化针脚
+  pinMode(PIN_LIGHT, OUTPUT);
+  pinMode(PIN_MOVE, OUTPUT);
+  pinMode(PIN_MOVE_R, OUTPUT);
+  pinMode(PIN_TURN, OUTPUT);
+  pinMode(PIN_TURN_R, OUTPUT);
+
+  stk_l_init = false;
+}
+
+void loop()
+{
+  if (!connected)
+  {
+    if (advDevice != nullptr)
+    {
+      if (connectToServer(advDevice))
+      {
+        Serial.println("Success! get start");
+      }
+      else
+      {
+        Serial.println("Failed to connect");
+      }
+      advDevice = nullptr;
+    }
+    else if (!scanning)
+    {
+      startScan();
+    }
+  }
+
+  delay(2000);
+}
