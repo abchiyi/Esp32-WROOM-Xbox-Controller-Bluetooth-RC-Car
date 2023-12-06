@@ -24,8 +24,8 @@ static NimBLEUUID uuidCharaPeripheralAppearance("2a01");
 static NimBLEUUID uuidCharaPeripheralControlParameters("2a04");
 
 // 定义控制 Pin
-#define PIN_MOVE 25   // 移动控制
-#define PIN_MOVE_R 26 // 倒车控制
+#define PIN_MOVE 12   // 移动控制
+#define PIN_MOVE_R 14 // 倒车控制
 #define PIN_TURN 27   // 左转
 #define PIN_TURN_R 14 // 右转
 #define PIN_LIGHT 12  // 状态灯
