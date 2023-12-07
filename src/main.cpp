@@ -25,10 +25,10 @@ static NimBLEUUID uuidCharaPeripheralControlParameters("2a04");
 
 // 定义控制 Pin
 #define PIN_MOVE 12   // 移动控制
-#define PIN_MOVE_R 14 // 倒车控制
-#define PIN_TURN 27   // 左转
-#define PIN_TURN_R 14 // 右转
-#define PIN_LIGHT 12  // 状态灯
+#define PIN_MOVE_R 27 // 倒车控制
+#define PIN_TURN 26   // 转向控制
+#define PIN_TURN_R 14 // XXX 不需要的控制脚右转
+#define PIN_LIGHT 25  // 状态灯
 int stk_l;
 bool stk_l_init;
 
@@ -105,6 +105,8 @@ void VehicleControl(uint8_t *pData, size_t length)
     {
       digitalWrite(PIN_MOVE_R, 0);
     }
+    Serial.print("PinMoveR :");
+    Serial.println(digitalRead(PIN_MOVE_R));
   }
   else
   {
@@ -415,7 +417,7 @@ void setup()
   Serial.println("Starting NimBLE Client");
   /** Initialize NimBLE, no device name spcified as we are not advertising */
   NimBLEDevice::init("");
-  NimBLEDevice::setOwnAddrType(BLE_OWN_ADDR_RANDOM);
+  NimBLEDevice::setOwnAddrType(BLE_OWN_ADDR_PUBLIC);
   NimBLEDevice::setSecurityAuth(true, true, true);
   NimBLEDevice::setPower(ESP_PWR_LVL_P9); /** +9db */
 
