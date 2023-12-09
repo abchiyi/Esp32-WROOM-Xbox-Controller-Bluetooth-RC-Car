@@ -1,10 +1,14 @@
 #include <Arduino.h>
+
+#include <math.h>
+#include <ESP32Servo.h>
 #include <NimBLEDevice.h>
 #include <XboxControllerNotificationParser.h>
 
-void scanEndedCB(NimBLEScanResults results);
-
 XboxControllerNotificationParser xboxNotif;
+Servo servo;
+
+void scanEndedCB(NimBLEScanResults results);
 
 static NimBLEAdvertisedDevice *advDevice;
 
@@ -27,15 +31,15 @@ static NimBLEUUID uuidCharaPeripheralControlParameters("2a04");
 #define PIN_MOVE 12   // 移动控制
 #define PIN_MOVE_R 27 // 倒车控制
 #define PIN_TURN 26   // 转向控制
-#define PIN_TURN_R 14 // XXX 不需要的控制脚右转
 #define PIN_LIGHT 25  // 状态灯
 int stk_l;
 bool stk_l_init;
 
-void setLight(int status)
-{
-  digitalWrite(PIN_LIGHT, status);
-}
+const int width = 65535;
+const int deadZone = 4500;
+const int LStart = width / 2 - deadZone / 2;
+const int RStart = width / 2 + deadZone / 2;
+const int JoyLength = 256;
 
 void lightFast()
 {
@@ -60,7 +64,7 @@ void lightSlow()
   }
 }
 
-/* 灯光控制
+/* 灯光控制 使用多线程
    缓慢持续闪烁未连接到手柄
    间隔快速双闪已连接到手柄
 */
@@ -86,56 +90,74 @@ void LightTask(void *pt)
   }
 }
 
-/* 车辆控制 */
-void VehicleControl(uint8_t *pData, size_t length)
+/* 将摇杆输入值转换为角度并应用到舵机 */
+void Turn(int joy, bool reverse = false)
 {
-  xboxNotif.update(pData, length);
 
-  // 右扳机油门
-  if (xboxNotif.trigRT || xboxNotif.trigLT)
+  // 计算打杆量
+  int t_joy = joy <= LStart ? joy : joy - deadZone;
+  int value = round(double(t_joy) * (double(JoyLength) / double(LStart)));
+
+  // 转换杆量为角度
+  double step = 90.000 / double(JoyLength);
+  int ang = 180 - value * step;
+
+  // 写入角度
+  servo.write(ang);
+
+  Serial.print("ANG :");
+  Serial.println(ang);
+}
+
+/* 车辆移动
+  @param reverse 后退
+  @param stop 停止
+  @trig 油门控制
+*/
+void Move(int trig, bool reverse, bool stop)
+{
+
+  if (!stop)
   {
-    analogWrite(PIN_MOVE, ceil(xboxNotif.trigRT / 4));
-    // 左扳机倒车
-    if (xboxNotif.trigLT)
-    {
-      analogWrite(PIN_MOVE, ceil(xboxNotif.trigLT / 4));
-      digitalWrite(PIN_MOVE_R, 1);
-    }
-    else
-    {
-      digitalWrite(PIN_MOVE_R, 0);
-    }
-    Serial.print("PinMoveR :");
-    Serial.println(digitalRead(PIN_MOVE_R));
+    analogWrite(PIN_MOVE, round(trig / 4));
+    reverse
+        ? digitalWrite(PIN_MOVE_R, 1)
+        : digitalWrite(PIN_MOVE_R, 0);
   }
   else
   {
     analogWrite(PIN_MOVE, 0);
     digitalWrite(PIN_MOVE_R, 0);
   }
+}
 
-  // 转向
-  if (!stk_l_init)
-  {
-    stk_l = 33000;
-    stk_l_init = true;
-  }
+/* 车辆控制 */
+void VehicleControl(uint8_t *pData, size_t length)
+{
+  xboxNotif.update(pData, length);
+  Serial.print("Width : ");
+  Serial.print(width);
+  Serial.print(" LStart :");
+  Serial.print(LStart);
+  Serial.print(" RStart :");
+  Serial.print(RStart);
+  Serial.print(" deadZone :");
+  Serial.println(deadZone);
+  Serial.print("JOY :");
+  Serial.println(xboxNotif.joyLHori);
 
-  // 左转
-  if (xboxNotif.joyLHori < stk_l - 18000)
-  {
-    digitalWrite(PIN_TURN, 1);
-  }
-  else if (xboxNotif.joyLHori > stk_l + 18000)
-  {
-    digitalWrite(PIN_TURN, 1);
-    digitalWrite(PIN_TURN_R, 1);
-  }
-  else
-  {
-    digitalWrite(PIN_TURN, 0);
-    digitalWrite(PIN_TURN_R, 0);
-  }
+  const int LT = xboxNotif.trigLT;
+  const int RT = xboxNotif.trigRT;
+
+  LT   ? Move(LT, true, false)  // 倒车
+  : RT ? Move(RT, false, false) // 前进
+       : Move(0, false, true);  // 停止
+
+  // 执行转向动作
+  const int joy = xboxNotif.joyLHori;
+  joy <= LStart   ? Turn(joy)     // 从左摇杆起始值计算旋转90°~0°
+  : joy >= RStart ? Turn(joy)     // 从右摇杆起始值计算旋转90°~180°
+                  : Turn(LStart); // 复位至90°
 }
 
 class ClientCallbacks : public NimBLEClientCallbacks
@@ -426,10 +448,12 @@ void setup()
   pinMode(PIN_MOVE, OUTPUT);
   pinMode(PIN_MOVE_R, OUTPUT);
   pinMode(PIN_TURN, OUTPUT);
-  pinMode(PIN_TURN_R, OUTPUT);
-
   stk_l_init = false;
   xTaskCreate(LightTask, "status light", 1024, NULL, 1, NULL);
+
+  // 转向设置
+  servo.setPeriodHertz(50);
+  servo.attach(PIN_TURN, 50, 2500);
 }
 
 void loop()
@@ -454,6 +478,6 @@ void loop()
     }
   }
 
-  Serial.println("scanning:" + String(scanning) + " connected:" + String(connected) + " advDevice is nullptr:" + String(advDevice == nullptr));
+  // Serial.println("scanning:" + String(scanning) + " connected:" + String(connected) + " advDevice is nullptr:" + String(advDevice == nullptr));
   delay(2000);
 }
