@@ -1,0 +1,9 @@
+{
+  "name": "XboxController",
+  "description": "蓝牙连接XboxController",
+  "frameworks": "arduino",
+  "platforms": "espressif32",
+  "dependencies": {
+    "h2zero/NimBLE-Arduino": "^1.4.1"
+  }
+}
