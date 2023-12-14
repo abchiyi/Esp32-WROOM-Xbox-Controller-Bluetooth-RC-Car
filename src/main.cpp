@@ -12,8 +12,8 @@ Servo servo;
 #define PIN_MOVE_R 27  // 倒车控制
 #define PIN_TURN 26    // 转向控制
 #define PIN_LIGHT 25   // 状态灯
-#define PIN_L_LIGHT 18 // 左转向灯
-#define PIN_R_LIGHT 19 // 右转向灯
+#define PIN_L_LIGHT 33 // 左转向灯
+#define PIN_R_LIGHT 32 // 右转向灯
 
 const int width = 65535;
 const int deadZone = 4500;
@@ -34,8 +34,8 @@ void TaskButtonListen(void *pt)
 {
   ButtonListenData *BTLD = (ButtonListenData *)pt;
   bool *value, *button;
-  value = BTLD->value;
-  button = BTLD->button;
+  value = (bool *)BTLD->value;
+  button = (bool *)BTLD->button;
 
   bool changed = false;
 
@@ -56,13 +56,17 @@ void TaskButtonListen(void *pt)
   }
 }
 
-void TaskVehicleLight(void *pt)
+void TaskIndicatorLight(void *pt)
 {
+  bool value = false;
+  bool hazardLight = false;
   while (true)
   {
     if (LightTurnL)
     {
-      digitalWrite(PIN_L_LIGHT, !digitalRead(PIN_L_LIGHT));
+      digitalWrite(PIN_L_LIGHT, value);
+      Serial.print("T-L :");
+      Serial.println(digitalRead(PIN_L_LIGHT));
     }
     else
     {
@@ -70,12 +74,15 @@ void TaskVehicleLight(void *pt)
     }
     if (LightTurnR)
     {
-      digitalWrite(PIN_R_LIGHT, !digitalRead(PIN_R_LIGHT));
+      digitalWrite(PIN_R_LIGHT, value);
+      Serial.print("T-R :");
+      Serial.println(digitalRead(PIN_R_LIGHT));
     }
     else
     {
       digitalWrite(PIN_R_LIGHT, 0);
     }
+    value = !value;
     vTaskDelay(500);
   }
 }
@@ -180,21 +187,23 @@ void Move(int trig, bool reverse, bool stop)
 /* 车辆控制 */
 void VehicleControl()
 {
+  if (xboxController.connected)
+  {
+    auto controller = xboxController.get();
 
-  auto controller = xboxController.get();
+    const int LT = xboxController.get().trigLT;
+    const int RT = xboxController.get().trigRT;
 
-  const int LT = xboxController.get().trigLT;
-  const int RT = xboxController.get().trigRT;
+    LT   ? Move(LT, true, false)  // 倒车
+    : RT ? Move(RT, false, false) // 前进
+         : Move(0, false, true);  // 停止
 
-  LT   ? Move(LT, true, false)  // 倒车
-  : RT ? Move(RT, false, false) // 前进
-       : Move(0, false, true);  // 停止
-
-  // 执行转向动作
-  const int joy = controller.joyLHori;
-  joy <= LStart   ? Turn(joy)     // 从左摇杆起始值计算旋转90°~0°
-  : joy >= RStart ? Turn(joy)     // 从右摇杆起始值计算旋转90°~180°
-                  : Turn(LStart); // 复位至90°
+    // 执行转向动作
+    const int joy = controller.joyLHori;
+    joy <= LStart   ? Turn(joy)     // 从左摇杆起始值计算旋转90°~0°
+    : joy >= RStart ? Turn(joy)     // 从右摇杆起始值计算旋转90°~180°
+                    : Turn(LStart); // 复位至90°
+  }
 }
 
 void setup()
@@ -217,15 +226,15 @@ void setup()
   ButtonListenData LB;
   LB.value = (bool *)&LightTurnL;
   LB.button = (bool *)&xboxController.data.btnLB;
-  xTaskCreate(TaskButtonListen, "Listen LB", 1024, (void *)&LB, 1, NULL);
+  xTaskCreate(TaskButtonListen, "Listen LB", 1024, (void *)&LB, 3, NULL);
 
   /*  RB  */
   ButtonListenData RB;
   RB.value = (bool *)&LightTurnR;
   RB.button = (bool *)&xboxController.data.btnRB;
-  xTaskCreate(TaskButtonListen, "Listen RB", 1024, (void *)&RB, 1, NULL);
+  xTaskCreate(TaskButtonListen, "Listen RB", 1024, (void *)&RB, 3, NULL);
 
-  xTaskCreate(TaskVehicleLight, "TaskVehicleLight", 1024, NULL, 1, NULL);
+  xTaskCreate(TaskIndicatorLight, "Indicator Light", 1024, NULL, 1, NULL);
   xTaskCreate(TaskStatusLight, "status light", 1024, NULL, 1, NULL);
 }
 
