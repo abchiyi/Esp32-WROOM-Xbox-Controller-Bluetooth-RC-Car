@@ -8,16 +8,77 @@ XboxController xboxController;
 Servo servo;
 
 // 定义控制 Pin
-#define PIN_MOVE 12   // 移动控制
-#define PIN_MOVE_R 27 // 倒车控制
-#define PIN_TURN 26   // 转向控制
-#define PIN_LIGHT 25  // 状态灯
+#define PIN_MOVE 12    // 移动控制
+#define PIN_MOVE_R 27  // 倒车控制
+#define PIN_TURN 26    // 转向控制
+#define PIN_LIGHT 25   // 状态灯
+#define PIN_L_LIGHT 18 // 左转向灯
+#define PIN_R_LIGHT 19 // 右转向灯
 
 const int width = 65535;
 const int deadZone = 4500;
 const int LStart = width / 2 - deadZone / 2;
 const int RStart = width / 2 + deadZone / 2;
 const int JoyLength = 256;
+
+bool LightTurnL = false;
+bool LightTurnR = false;
+
+struct ButtonListenData
+{
+  bool *value;
+  bool *button;
+};
+
+void TaskButtonListen(void *pt)
+{
+  ButtonListenData *BTLD = (ButtonListenData *)pt;
+  bool *value, *button;
+  value = BTLD->value;
+  button = BTLD->button;
+
+  bool changed = false;
+
+  while (true)
+  {
+
+    vTaskDelay(20);
+    if (*button && xboxController.connected)
+    {
+      *value = changed ? *value : !*value;
+      changed = true;
+      continue;
+    }
+    else
+    {
+      changed = false;
+    }
+  }
+}
+
+void TaskVehicleLight(void *pt)
+{
+  while (true)
+  {
+    if (LightTurnL)
+    {
+      digitalWrite(PIN_L_LIGHT, !digitalRead(PIN_L_LIGHT));
+    }
+    else
+    {
+      digitalWrite(PIN_L_LIGHT, 0);
+    }
+    if (LightTurnR)
+    {
+      digitalWrite(PIN_R_LIGHT, !digitalRead(PIN_R_LIGHT));
+    }
+    else
+    {
+      digitalWrite(PIN_R_LIGHT, 0);
+    }
+    vTaskDelay(500);
+  }
+}
 
 void lightFast()
 {
@@ -46,7 +107,7 @@ void lightSlow()
    缓慢持续闪烁未连接到手柄
    间隔快速双闪已连接到手柄
 */
-void LightTask(void *pt)
+void TaskStatusLight(void *pt)
 {
   while (true)
   {
@@ -146,12 +207,26 @@ void setup()
   pinMode(PIN_MOVE, OUTPUT);
   pinMode(PIN_MOVE_R, OUTPUT);
   pinMode(PIN_TURN, OUTPUT);
-
-  xTaskCreate(LightTask, "status light", 1024, NULL, 1, NULL);
-
+  pinMode(PIN_L_LIGHT, OUTPUT);
+  pinMode(PIN_R_LIGHT, OUTPUT);
   // 转向设置
   servo.setPeriodHertz(50);
   servo.attach(PIN_TURN, 50, 2500);
+
+  /*  LB  */
+  ButtonListenData LB;
+  LB.value = (bool *)&LightTurnL;
+  LB.button = (bool *)&xboxController.data.btnLB;
+  xTaskCreate(TaskButtonListen, "Listen LB", 1024, (void *)&LB, 1, NULL);
+
+  /*  RB  */
+  // ButtonListenData RB;
+  // RB.value = (bool *)&LightTurnR;
+  // RB.button = (bool *)&xboxController.data.btnLB;
+  // xTaskCreate(TaskButtonListen, "Listen RB", 1024, (void *)&RB, 1, NULL);
+
+  xTaskCreate(TaskVehicleLight, "TaskVehicleLight", 1024, NULL, 1, NULL);
+  xTaskCreate(TaskStatusLight, "status light", 1024, NULL, 1, NULL);
 }
 
 void loop()

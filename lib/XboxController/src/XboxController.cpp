@@ -349,7 +349,7 @@ void XboxController::connect(NimBLEAddress address)
   NimBLEDevice::setOwnAddrType(BLE_OWN_ADDR_PUBLIC);
   NimBLEDevice::setSecurityAuth(true, true, true);
   NimBLEDevice::setPower(ESP_PWR_LVL_P9); /** +9db */
-  xTaskCreate(mainLoop, "XboxCOntroller", 4096, NULL, 1, NULL);
+  xTaskCreate(mainLoop, "XboxCOntroller", 4096, NULL, 5, NULL);
 }
 
 XboxControllerNotificationParser XboxController ::get()
