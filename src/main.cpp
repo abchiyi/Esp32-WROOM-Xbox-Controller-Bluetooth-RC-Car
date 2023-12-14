@@ -220,10 +220,10 @@ void setup()
   xTaskCreate(TaskButtonListen, "Listen LB", 1024, (void *)&LB, 1, NULL);
 
   /*  RB  */
-  // ButtonListenData RB;
-  // RB.value = (bool *)&LightTurnR;
-  // RB.button = (bool *)&xboxController.data.btnLB;
-  // xTaskCreate(TaskButtonListen, "Listen RB", 1024, (void *)&RB, 1, NULL);
+  ButtonListenData RB;
+  RB.value = (bool *)&LightTurnR;
+  RB.button = (bool *)&xboxController.data.btnRB;
+  xTaskCreate(TaskButtonListen, "Listen RB", 1024, (void *)&RB, 1, NULL);
 
   xTaskCreate(TaskVehicleLight, "TaskVehicleLight", 1024, NULL, 1, NULL);
   xTaskCreate(TaskStatusLight, "status light", 1024, NULL, 1, NULL);
