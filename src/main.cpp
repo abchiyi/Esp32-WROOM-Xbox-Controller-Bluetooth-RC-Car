@@ -23,31 +23,55 @@ const int JoyLength = 256;
 
 bool LightTurnL = false;
 bool LightTurnR = false;
+bool HazardLight = false;
 
 struct ButtonListenData
 {
   bool *value;
   bool *button;
+  SemaphoreHandle_t *mutex = nullptr;
 };
 
+/* 监听一个按钮按下 */
 void TaskButtonListen(void *pt)
 {
-  ButtonListenData *BTLD = (ButtonListenData *)pt;
-  bool *value, *button;
-  value = (bool *)BTLD->value;
-  button = (bool *)BTLD->button;
-
+  ButtonListenData data = *(ButtonListenData *)pt;
   bool changed = false;
+
+  if (data.mutex == nullptr) // 不使用 mutex
+  {
+    while (true)
+    {
+      vTaskDelay(20);
+      if (*data.button && xboxController.connected)
+      {
+        *data.value = changed ? *data.value : !*data.value;
+        changed = true;
+      }
+      else
+      {
+        changed = false;
+      }
+    }
+  }
 
   while (true)
   {
-
     vTaskDelay(20);
-    if (*button && xboxController.connected)
+    if (*data.button && xboxController.connected)
     {
-      *value = changed ? *value : !*value;
-      changed = true;
-      continue;
+
+      if (changed) // 按钮未被释放时跳过;
+      {
+        continue;
+      }
+
+      if (xSemaphoreTake(*data.mutex, 1000))
+      {
+        *data.value = !*data.value;
+        changed = true;
+        xSemaphoreGive(*data.mutex);
+      }
     }
     else
     {
@@ -56,34 +80,82 @@ void TaskButtonListen(void *pt)
   }
 }
 
+/* 转向灯任务 */
 void TaskIndicatorLight(void *pt)
 {
   bool value = false;
-  bool hazardLight = false;
   while (true)
   {
-    if (LightTurnL)
+
+    LightTurnL || LightTurnR || HazardLight
+        ? vTaskDelay(400) // 灯光闪烁
+        : vTaskDelay(20); // 快速轮询是否开启灯光
+
+    LightTurnL || HazardLight // 左转向灯
+        ? digitalWrite(PIN_L_LIGHT, value)
+        : digitalWrite(PIN_L_LIGHT, 0);
+
+    LightTurnR || HazardLight // 右转向灯
+        ? digitalWrite(PIN_R_LIGHT, value)
+        : digitalWrite(PIN_R_LIGHT, 0);
+
+    value = !value; // 反转灯光
+  }
+}
+
+void TaskIndicatorLightControl(void *pt)
+{
+  bool both;
+  bool changed = false;
+  while (true)
+  {
+    both = xboxController.data.btnLB && xboxController.data.btnRB;
+
+    if (both)
     {
-      digitalWrite(PIN_L_LIGHT, value);
-      Serial.print("T-L :");
-      Serial.println(digitalRead(PIN_L_LIGHT));
+      LightTurnR = false;
+      LightTurnL = false;
+      HazardLight = changed ? HazardLight : !HazardLight;
+      changed = true;
+    }
+    else if (xboxController.data.btnLB && !HazardLight)
+    {
+      if (xSemaphoreTake(xMutexIndicatorLight, 1000))
+      {
+        LightTurnL = changed ? LightTurnL : !LightTurnL;
+        LightTurnR = false;
+        HazardLight = false;
+        changed = true;
+        xSemaphoreGive(xMutexIndicatorLight);
+      }
+    }
+    else if (xboxController.data.btnRB && !HazardLight)
+    {
+      if (xSemaphoreTake(xMutexIndicatorLight, 1000))
+      {
+
+        LightTurnR = changed ? LightTurnR : !LightTurnR;
+        LightTurnL = false;
+        HazardLight = false;
+        changed = true;
+        xSemaphoreGive(xMutexIndicatorLight);
+      }
     }
     else
     {
-      digitalWrite(PIN_L_LIGHT, 0);
+      changed = false;
     }
-    if (LightTurnR)
-    {
-      digitalWrite(PIN_R_LIGHT, value);
-      Serial.print("T-R :");
-      Serial.println(digitalRead(PIN_R_LIGHT));
-    }
-    else
-    {
-      digitalWrite(PIN_R_LIGHT, 0);
-    }
-    value = !value;
-    vTaskDelay(500);
+    // Serial.print("R :");
+    // Serial.print(LightTurnR);
+    // Serial.print(" L :");
+    // Serial.print(LightTurnL);
+    // Serial.print(" H :");
+    // Serial.print(HazardLight);
+    // Serial.print(" B :");
+    // Serial.print(both);
+    // Serial.print(" ch :");
+    // Serial.println(changed);
+    vTaskDelay(5);
   }
 }
 
@@ -206,9 +278,14 @@ void VehicleControl()
   }
 }
 
+SemaphoreHandle_t xMutexIndicatorLight;
+
 void setup()
 {
   Serial.begin(115200);
+
+  xMutexIndicatorLight = xSemaphoreCreateMutex();
+
   xboxController.connect(NimBLEAddress("XXX"));
 
   // 初始化针脚
@@ -222,19 +299,22 @@ void setup()
   servo.setPeriodHertz(50);
   servo.attach(PIN_TURN, 50, 2500);
 
-  /*  LB  */
-  ButtonListenData LB;
-  LB.value = (bool *)&LightTurnL;
-  LB.button = (bool *)&xboxController.data.btnLB;
-  xTaskCreate(TaskButtonListen, "Listen LB", 1024, (void *)&LB, 3, NULL);
+  // /*  LB  */
+  // ButtonListenData LB;
+  // LB.value = (bool *)&LightTurnL;
+  // LB.button = (bool *)&xboxController.data.btnLB;
+  // LB.mutex = (SemaphoreHandle_t *)&xMutexIndicatorLight;
+  // xTaskCreatePinnedToCore(TaskButtonListen, "Listen LB", 1024, (void *)&LB, 3, NULL, 1);
 
-  /*  RB  */
-  ButtonListenData RB;
-  RB.value = (bool *)&LightTurnR;
-  RB.button = (bool *)&xboxController.data.btnRB;
-  xTaskCreate(TaskButtonListen, "Listen RB", 1024, (void *)&RB, 3, NULL);
-
+  // /*  RB  */
+  // ButtonListenData RB;
+  // RB.value = (bool *)&LightTurnR;
+  // RB.button = (bool *)&xboxController.data.btnRB;
+  // RB.mutex = (SemaphoreHandle_t *)&xMutexIndicatorLight;
+  // xTaskCreatePinnedToCore(TaskButtonListen, "Listen RB", 1024, (void *)&RB, 3, NULL, 1);
   xTaskCreate(TaskIndicatorLight, "Indicator Light", 1024, NULL, 1, NULL);
+  xTaskCreate(TaskIndicatorLightControl, "IndicatorLightControl", 1024, NULL, 1, NULL);
+
   xTaskCreate(TaskStatusLight, "status light", 1024, NULL, 1, NULL);
 }
 
