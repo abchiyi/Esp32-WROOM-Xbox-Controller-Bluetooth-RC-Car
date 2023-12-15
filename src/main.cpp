@@ -24,6 +24,7 @@ const int JoyLength = 256;
 bool LightTurnL = false;
 bool LightTurnR = false;
 bool HazardLight = false;
+SemaphoreHandle_t xMutexIndicatorLight;
 
 struct ButtonListenData
 {
@@ -277,8 +278,6 @@ void VehicleControl()
                     : Turn(LStart); // 复位至90°
   }
 }
-
-SemaphoreHandle_t xMutexIndicatorLight;
 
 void setup()
 {
