@@ -24,7 +24,6 @@ const int JoyLength = 256;
 bool LightTurnL = false;
 bool LightTurnR = false;
 bool HazardLight = false;
-SemaphoreHandle_t xMutexIndicatorLight;
 
 struct ButtonListenData
 {
@@ -104,56 +103,62 @@ void TaskIndicatorLight(void *pt)
   }
 }
 
+/* 转向灯按钮控制任务 */
 void TaskIndicatorLightControl(void *pt)
 {
-  bool both;
   bool changed = false;
+  bool btnLB_old, btnRB_old, btnLB, btnRB;
+
   while (true)
   {
-    both = xboxController.data.btnLB && xboxController.data.btnRB;
 
-    if (both)
+    btnLB = xboxController.data.btnLB;
+    btnRB = xboxController.data.btnRB;
+
+    // 当按下的按钮有变化时重置 changed
+    if (btnLB != btnLB_old || btnRB != btnRB_old)
+    {
+      changed = false;
+    }
+
+    if (btnLB && btnRB)
     {
       LightTurnR = false;
       LightTurnL = false;
       HazardLight = changed ? HazardLight : !HazardLight;
       changed = true;
     }
-    else if (xboxController.data.btnLB && !HazardLight)
+    else if (btnLB && !HazardLight && btnLB != btnLB_old)
     {
-      if (xSemaphoreTake(xMutexIndicatorLight, 1000))
-      {
-        LightTurnL = changed ? LightTurnL : !LightTurnL;
-        LightTurnR = false;
-        HazardLight = false;
-        changed = true;
-        xSemaphoreGive(xMutexIndicatorLight);
-      }
+      LightTurnL = changed ? LightTurnL : !LightTurnL;
+      LightTurnR = false;
+      HazardLight = false;
+      changed = true;
     }
-    else if (xboxController.data.btnRB && !HazardLight)
+    else if (btnRB && !HazardLight && btnRB != btnRB_old)
     {
-      if (xSemaphoreTake(xMutexIndicatorLight, 1000))
-      {
+      LightTurnR = changed ? LightTurnR : !LightTurnR;
+      LightTurnL = false;
+      HazardLight = false;
+      changed = true;
+    }
 
-        LightTurnR = changed ? LightTurnR : !LightTurnR;
-        LightTurnL = false;
-        HazardLight = false;
-        changed = true;
-        xSemaphoreGive(xMutexIndicatorLight);
-      }
-    }
-    else
-    {
-      changed = false;
-    }
+    // 在循环结尾处储存本次循环按钮的值以备在下个循环中比对
+    btnLB_old = btnLB;
+    btnRB_old = btnRB;
+
     // Serial.print("R :");
     // Serial.print(LightTurnR);
+    // Serial.print(" Old R :");
+    // Serial.print(btnLB_old);
     // Serial.print(" L :");
     // Serial.print(LightTurnL);
+    // Serial.print(" Old L :");
+    // Serial.print(btnLB_old);
     // Serial.print(" H :");
     // Serial.print(HazardLight);
     // Serial.print(" B :");
-    // Serial.print(both);
+    // Serial.print(btnLB && btnRB);
     // Serial.print(" ch :");
     // Serial.println(changed);
     vTaskDelay(5);
@@ -282,8 +287,6 @@ void VehicleControl()
 void setup()
 {
   Serial.begin(115200);
-
-  xMutexIndicatorLight = xSemaphoreCreateMutex();
 
   xboxController.connect(NimBLEAddress("XXX"));
 
