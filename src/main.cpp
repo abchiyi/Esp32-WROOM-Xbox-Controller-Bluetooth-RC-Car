@@ -14,6 +14,8 @@ Servo servo;
 #define PIN_LIGHT 25   // 状态灯
 #define PIN_L_LIGHT 33 // 左转向灯
 #define PIN_R_LIGHT 32 // 右转向灯
+#define CHANNEL_LIGHT_L 1
+#define CHANNEL_LIGHT_R 2
 
 const int width = 65535;
 const int deadZone = 4500;
@@ -23,7 +25,7 @@ const int JoyLength = 256;
 
 bool LightTurnL = false;
 bool LightTurnR = false;
-bool HazardLight = false;
+bool HazardLight = true;
 
 struct ButtonListenData
 {
@@ -83,23 +85,34 @@ void TaskButtonListen(void *pt)
 /* 转向灯任务 */
 void TaskIndicatorLight(void *pt)
 {
-  bool value = false;
+  bool increasing = false;
+  int lightLevel = 100;
+
+  const int MAX = 100;
+  const int MIN = 0;
+  const double step = (double)255 / (double)MAX;
+
   while (true)
   {
 
-    LightTurnL || LightTurnR || HazardLight
-        ? vTaskDelay(400) // 灯光闪烁
-        : vTaskDelay(20); // 快速轮询是否开启灯光
+    if (LightTurnL || LightTurnR || HazardLight)
+    {
+      increasing ? lightLevel++ : lightLevel--;
+      increasing = lightLevel >= MAX   ? false
+                   : lightLevel <= MIN ? true
+                                       : increasing;
+    }
 
+    int v = lightLevel <= MIN ? MIN : round((double)lightLevel * step);
     LightTurnL || HazardLight // 左转向灯
-        ? digitalWrite(PIN_L_LIGHT, value)
-        : digitalWrite(PIN_L_LIGHT, 0);
+        ? ledcWrite(CHANNEL_LIGHT_L, v)
+        : ledcWrite(CHANNEL_LIGHT_L, 0);
 
     LightTurnR || HazardLight // 右转向灯
-        ? digitalWrite(PIN_R_LIGHT, value)
-        : digitalWrite(PIN_R_LIGHT, 0);
+        ? ledcWrite(CHANNEL_LIGHT_R, v)
+        : ledcWrite(CHANNEL_LIGHT_R, 0);
 
-    value = !value; // 反转灯光
+    lightLevel == MIN || lightLevel == MAX ? vTaskDelay(200) : vTaskDelay(1);
   }
 }
 
@@ -167,21 +180,21 @@ void TaskIndicatorLightControl(void *pt)
 
 void lightFast()
 {
-  analogWrite(PIN_LIGHT, 255);
+  analogWrite(PIN_LIGHT, 100);
   vTaskDelay(100);
   analogWrite(PIN_LIGHT, 0);
 }
 
 void lightSlow()
 {
-  for (int i = 0; i <= 255; i = i + 5)
+  for (int i = 0; i <= 100; i = i + 5)
   {
     analogWrite(PIN_LIGHT, i);
     vTaskDelay(3);
   }
   vTaskDelay(100);
 
-  for (int i = 255; i >= 0; i = i - 5)
+  for (int i = 100; i >= 0; i = i - 5)
   {
     analogWrite(PIN_LIGHT, i);
     vTaskDelay(3);
@@ -287,7 +300,6 @@ void VehicleControl()
 void setup()
 {
   Serial.begin(115200);
-
   xboxController.connect(NimBLEAddress("XXX"));
 
   // 初始化针脚
@@ -301,19 +313,12 @@ void setup()
   servo.setPeriodHertz(50);
   servo.attach(PIN_TURN, 50, 2500);
 
-  // /*  LB  */
-  // ButtonListenData LB;
-  // LB.value = (bool *)&LightTurnL;
-  // LB.button = (bool *)&xboxController.data.btnLB;
-  // LB.mutex = (SemaphoreHandle_t *)&xMutexIndicatorLight;
-  // xTaskCreatePinnedToCore(TaskButtonListen, "Listen LB", 1024, (void *)&LB, 3, NULL, 1);
+  ledcSetup(CHANNEL_LIGHT_L, 2000, 8);
+  ledcAttachPin(33, CHANNEL_LIGHT_L);
 
-  // /*  RB  */
-  // ButtonListenData RB;
-  // RB.value = (bool *)&LightTurnR;
-  // RB.button = (bool *)&xboxController.data.btnRB;
-  // RB.mutex = (SemaphoreHandle_t *)&xMutexIndicatorLight;
-  // xTaskCreatePinnedToCore(TaskButtonListen, "Listen RB", 1024, (void *)&RB, 3, NULL, 1);
+  ledcSetup(CHANNEL_LIGHT_R, 2000, 8);
+  ledcAttachPin(32, CHANNEL_LIGHT_R);
+
   xTaskCreate(TaskIndicatorLight, "Indicator Light", 1024, NULL, 1, NULL);
   xTaskCreate(TaskIndicatorLightControl, "IndicatorLightControl", 1024, NULL, 1, NULL);
 
