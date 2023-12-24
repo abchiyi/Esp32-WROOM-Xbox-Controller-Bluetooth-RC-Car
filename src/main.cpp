@@ -226,7 +226,7 @@ void setup()
 
   xTaskCreate(TaskStatusLight, "status light", 1024, NULL, 1, NULL);
 
-  VehicleControlSetup(&xboxController, 4, PIN_TURN, 5, PIN_MOVE, PIN_MOVE_R);
+  VehicleControlSetup(&xboxController, 3, PIN_TURN, 4, PIN_MOVE, PIN_MOVE_R);
 }
 
 void loop()
