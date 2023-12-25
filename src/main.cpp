@@ -1,21 +1,28 @@
 #include <Arduino.h>
+
+#include <VehicleLight.h>
 #include <VehicleControl.h>
 
 XboxController xboxController;
 
 // 定义控制 Pin
-#define PIN_MOVE 12    // 移动控制
-#define PIN_MOVE_R 27  // 倒车控制
-#define PIN_TURN 26    // 转向控制
-#define PIN_LIGHT 25   // 状态灯
+#define PIN_MOVE 12   // 移动控制
+#define PIN_MOVE_R 27 // 倒车控制
+#define PIN_TURN 26   // 转向控制
+
+#define PIN_STATUS_LIGHT 25 // 状态灯
+#define CHANNEL_STATUS_LIGHT 1
+
 #define PIN_L_LIGHT 33 // 左转向灯
 #define PIN_R_LIGHT 32 // 右转向灯
-#define CHANNEL_LIGHT_L 1
-#define CHANNEL_LIGHT_R 2
+#define CHANNEL_LIGHT_L 2
+#define CHANNEL_LIGHT_R 3
+
+#define PIN_HEADLIGHT 13 // 大灯
 
 bool LightTurnL = false;
 bool LightTurnR = false;
-bool HazardLight = true;
+bool HazardLight = false;
 
 struct ButtonListenData
 {
@@ -154,61 +161,12 @@ void TaskIndicatorLightControl(void *pt)
   }
 }
 
-void lightFast()
-{
-  analogWrite(PIN_LIGHT, 100);
-  vTaskDelay(100);
-  analogWrite(PIN_LIGHT, 0);
-}
-
-void lightSlow()
-{
-  for (int i = 0; i <= 100; i = i + 5)
-  {
-    analogWrite(PIN_LIGHT, i);
-    vTaskDelay(3);
-  }
-  vTaskDelay(100);
-
-  for (int i = 100; i >= 0; i = i - 5)
-  {
-    analogWrite(PIN_LIGHT, i);
-    vTaskDelay(3);
-  }
-}
-
-/* 灯光控制 使用多线程
-   缓慢持续闪烁未连接到手柄
-   间隔快速双闪已连接到手柄
-*/
-void TaskStatusLight(void *pt)
-{
-  while (true)
-  {
-    if (xboxController.connected)
-    {
-      lightFast();
-      vTaskDelay(100);
-      lightFast();
-      vTaskDelay(2000);
-    }
-    else
-    {
-      lightSlow();
-      vTaskDelay(200);
-      lightSlow();
-      vTaskDelay(200);
-    }
-  }
-}
-
 void setup()
 {
   Serial.begin(115200);
   xboxController.connect(NimBLEAddress("XXX"));
 
   // 初始化针脚
-  pinMode(PIN_LIGHT, OUTPUT);
   pinMode(PIN_MOVE, OUTPUT);
   pinMode(PIN_MOVE_R, OUTPUT);
   pinMode(PIN_TURN, OUTPUT);
@@ -224,9 +182,8 @@ void setup()
   xTaskCreate(TaskIndicatorLight, "Indicator Light", 1024, NULL, 1, NULL);
   xTaskCreate(TaskIndicatorLightControl, "IndicatorLightControl", 1024, NULL, 1, NULL);
 
-  xTaskCreate(TaskStatusLight, "status light", 1024, NULL, 1, NULL);
-
   VehicleControlSetup(&xboxController, 3, PIN_TURN, 4, PIN_MOVE, PIN_MOVE_R);
+  StatusLightSetup(PIN_STATUS_LIGHT, CHANNEL_STATUS_LIGHT);
 }
 
 void loop()
