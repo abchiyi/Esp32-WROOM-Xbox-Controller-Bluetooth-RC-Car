@@ -12,7 +12,6 @@ public:
   static XboxControllerNotificationParser data;
   static bool scanning;
   static bool connected;
-  XboxController(/* args */);
   void connect(NimBLEAddress);
   XboxControllerNotificationParser get(void);
 };

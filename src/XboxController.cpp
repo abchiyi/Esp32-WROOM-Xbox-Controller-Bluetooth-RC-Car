@@ -339,10 +339,6 @@ bool XboxController::connected = false;
 XboxControllerNotificationParser XboxController::data = XboxControllerNotificationParser();
 NimBLEAddress XboxController::targetDeviceAddress = NimBLEAddress("98:7A:14:29:10:41");
 
-XboxController::XboxController(/* args */)
-{
-}
-
 void XboxController::connect(NimBLEAddress address)
 {
   NimBLEDevice::init("");

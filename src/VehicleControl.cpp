@@ -78,10 +78,9 @@ void TaskMove(void *pt)
 
 Servo servo;
 
-void VehicleControlSetup(XboxController *controller, int channelTurn, int servoPin, int channelMove, int motorPin, int motorPinR)
+void VehicleControlSetup(void *controller, int channelTurn, int servoPin, int channelMove, int motorPin, int motorPinR)
 {
 
-  ESP32PWM::allocateTimer(channelTurn);
   servo.setPeriodHertz(50);
   servo.attach(servoPin, 50, 2500);
 
@@ -92,7 +91,7 @@ void VehicleControlSetup(XboxController *controller, int channelTurn, int servoP
   data.channelMove = channelMove;
   data.prinMoveR = motorPinR;
   data.channelTurn = channelTurn;
-  data.controller = controller;
+  data.controller = (XboxController *)controller;
   data.servo = &servo;
 
   xTaskCreate(TaskTurn, "Turn", 2048, (void *)&data, 2, NULL);
