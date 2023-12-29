@@ -125,7 +125,7 @@ void TaskLightControll(void *pt)
   }
 }
 
-/* 设置大灯 */
+/* 设置灯光任务 */
 void LightSetup()
 {
 
