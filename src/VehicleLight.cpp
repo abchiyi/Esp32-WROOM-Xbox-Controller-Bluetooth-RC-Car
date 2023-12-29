@@ -55,30 +55,6 @@ void StatusLightSetup(int pin, int pwmChannel)
   xTaskCreate(TaskStatusLight, "status light", 1024, (void *)&pwmChannel, 3, NULL);
 }
 
-void TaskHeadlight(void *pt)
-{
-  int pwmChannel = *(int *)pt;
-
-  while (true)
-  {
-    ledcWrite(pwmChannel, 10);
-    vTaskDelay(2000);
-    ledcWrite(pwmChannel, 100);
-    vTaskDelay(2000);
-    ledcWrite(pwmChannel, 255);
-    vTaskDelay(2000);
-  }
-}
-
-void HeadlightSetup(int pin, int pwmChannel)
-{
-  pinMode(pin, OUTPUT);
-  ledcSetup(pwmChannel, 2000, 8);
-  ledcAttachPin(pin, pwmChannel);
-
-  xTaskCreate(TaskHeadlight, "TaskHeadlight", 1024, (void *)&pwmChannel, 3, NULL);
-}
-
 /* 转向灯任务 */
 void TaskIndicatorLight(void *pt)
 {
