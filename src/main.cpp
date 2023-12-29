@@ -1,15 +1,16 @@
 #include <Arduino.h>
 
 #include <VehicleLight.h>
-#include <VehicleControl.h>
+// #include <VehicleControl.h>
 #include <XboxController.h>
 
 XboxController Controller;
 
 // 定义控制 Pin
-#define PIN_MOVE 32   // 移动控制
-#define PIN_MOVE_R 33 // 倒车控制
-#define PIN_TURN 12   // 转向控制
+#define PIN_MOVE 32    // 移动控制
+#define PIN_MOVE_R 33  // 倒车控制
+#define CHANNEL_MOVE 4 // 马达驱动 pwm 通道
+#define PIN_TURN 12    // 转向控制
 
 #define PIN_STATUSLIGHT 25 // 状态灯
 #define CHANNEL_STATUSLIGHT 1
@@ -20,23 +21,101 @@ XboxController Controller;
 #define PIN_STOPLIGHT 22    // 刹车灯
 #define CHANNEL_STOPLIGHT 7 // 刹车灯PWM通道
 
+#define PIN_REVERSING_LIGHT 23    // 倒车灯
+#define CHANNEL_REVERSING_LIGHT 8 // 倒车灯PWM通道
+
 #define PIN_L_LIGHT 25 // 左转向灯
 #define PIN_R_LIGHT 26 // 右转向灯
 #define CHANNEL_LIGHT_L 2
 #define CHANNEL_LIGHT_R 3
 
 bool DISTANT_LIGHT = false; // 远光
-bool LOW_BEAM = false;      // 近光
 bool WIDTH_LAMP = false;    // 示宽灯
+int REVERSING_LIGHT = 0;    // 倒车灯
+bool LOW_BEAM = false;      // 近光
+bool BRAKE = false;         // 刹车
 int HeadLight = 0;          // 大灯亮度
 int StopLight = 0;          // 大灯亮度
 
-struct ButtonListenData
+// 车辆移动
+void TaskMove(void *pt)
 {
-  bool *value;
-  bool *button;
-};
+  bool HOLD_RT = false;
+  bool HOLD_LT = false;
+  bool changed = false;
 
+  while (true)
+  {
+    int LT = Controller.data.trigLT;
+    int RT = Controller.data.trigRT;
+    // 确定那个按钮先按下;
+    if (LT || RT)
+    {
+      if (!changed)
+      {
+        HOLD_RT = (bool)RT;
+        HOLD_LT = (bool)LT;
+      }
+      changed = true;
+    }
+    else
+    {
+      HOLD_RT = false;
+      HOLD_LT = false;
+      changed = false;
+    }
+
+    BRAKE = LT && RT;                    // 两个扳机键同时按下开启刹车
+    REVERSING_LIGHT = HOLD_LT ? 150 : 0; // 倒车灯
+
+    digitalWrite(PIN_MOVE_R, (bool)LT);
+    // LT按下反转马达
+    if (BRAKE)
+    {
+      if (HOLD_RT)
+      {
+        digitalWrite(PIN_MOVE_R, true);
+      }
+      if (HOLD_LT)
+      {
+        digitalWrite(PIN_MOVE_R, false);
+      }
+      ledcWrite(CHANNEL_MOVE, 10);
+    }
+    else
+    {
+      ledcWrite(CHANNEL_MOVE, round((LT ? LT : RT) / 4)); // LT值优先
+    }
+
+    vTaskDelay(1);
+    if (Controller.connected)
+    {
+      Serial.print("Move : ");
+      Serial.print(round((LT ? LT : RT) / 4));
+      Serial.print(", R : ");
+      Serial.print((bool)LT);
+      Serial.print(", fq : ");
+      Serial.print(ledcRead(CHANNEL_MOVE));
+      Serial.print(", H RT ");
+      Serial.print(HOLD_RT);
+      Serial.print(", H LT ");
+      Serial.println(HOLD_LT);
+    }
+  }
+}
+
+void VehicleControlSetup(void *controller, int channelTurn, int servoPin, int channelMove, int motorPin, int motorPinR)
+{
+
+  // servo.setPeriodHertz(50);
+  // servo.attach(servoPin, 50, 2500);
+
+  ledcSetup(channelMove, 2000, 8);
+  ledcAttachPin(motorPin, channelMove);
+
+  // xTaskCreate(TaskTurn, "Turn", 2048, (void *)&data, 2, NULL);
+  xTaskCreate(TaskMove, "Move", 2048, NULL, 2, NULL);
+}
 /* 灯光任务 */
 void TaskLight(void *pt)
 {
@@ -44,6 +123,7 @@ void TaskLight(void *pt)
   {
     ledcWrite(CHANNEL_HEADLIGHT, HeadLight);
     ledcWrite(CHANNEL_STOPLIGHT, StopLight);
+    ledcWrite(CHANNEL_REVERSING_LIGHT, REVERSING_LIGHT);
     vTaskDelay(20);
   }
 }
@@ -121,7 +201,11 @@ void TaskLightControll(void *pt)
                 : WIDTH_LAMP  ? 30
                               : 0;
 
-    StopLight = WIDTH_LAMP ? 30 : 0;
+    StopLight = BRAKE        ? 255
+                : WIDTH_LAMP ? 30
+                             : 0;
+
+    // REVERSING_LIGHT = REVERSING_LIGHT;
   }
 }
 
@@ -136,6 +220,10 @@ void LightSetup()
   pinMode(PIN_STOPLIGHT, OUTPUT);
   ledcSetup(CHANNEL_STOPLIGHT, 2000, 8);
   ledcAttachPin(PIN_STOPLIGHT, CHANNEL_STOPLIGHT);
+
+  pinMode(PIN_REVERSING_LIGHT, OUTPUT);
+  ledcSetup(CHANNEL_REVERSING_LIGHT, 2000, 8);
+  ledcAttachPin(PIN_REVERSING_LIGHT, CHANNEL_REVERSING_LIGHT);
 
   xTaskCreate(TaskLight, "TaskHeadlight", 1024, NULL, 3, NULL);
   xTaskCreate(TaskLightControll, "TaskHeadlightControll", 1024, NULL, 3, NULL);
