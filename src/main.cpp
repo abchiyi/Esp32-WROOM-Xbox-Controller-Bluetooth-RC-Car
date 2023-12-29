@@ -37,28 +37,7 @@ struct ButtonListenData
   bool *button;
 };
 
-/* 监听一个按钮按下 */
-void TaskButtonListen(void *pt)
-{
-  ButtonListenData data = *(ButtonListenData *)pt;
-  bool changed = false;
-
-  while (true)
-  {
-    vTaskDelay(20);
-    if (*data.button && Controller.connected)
-    {
-      *data.value = changed ? *data.value : !*data.value;
-      changed = true;
-    }
-    else
-    {
-      changed = false;
-    }
-  }
-}
-
-/* 大灯任务 */
+/* 灯光任务 */
 void TaskLight(void *pt)
 {
   while (true)
@@ -69,7 +48,7 @@ void TaskLight(void *pt)
   }
 }
 
-/* 大灯控制任务 */
+/* 灯光控制任务 */
 void TaskLightControll(void *pt)
 {
   bool changed = false;
