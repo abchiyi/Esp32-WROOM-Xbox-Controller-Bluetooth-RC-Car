@@ -48,15 +48,15 @@ void TaskMove(void *pt)
   {
     int LT = Controller.data.trigLT;
     int RT = Controller.data.trigRT;
-    // 确定那个按钮先按下;
+    // 确定前进方向;
     if (LT || RT)
     {
       if (!changed)
       {
         HOLD_RT = (bool)RT;
-        HOLD_LT = (bool)LT;
+        HOLD_LT = !HOLD_RT ? (bool)LT : false;
+        changed = true;
       }
-      changed = true;
     }
     else
     {
@@ -64,27 +64,25 @@ void TaskMove(void *pt)
       HOLD_LT = false;
       changed = false;
     }
+    // 当所控制按钮的值发生改变时，重设change以在下个循环重新计算前进方向
+    if (HOLD_LT != (bool)LT && HOLD_RT != (bool)RT)
+    {
+      changed = false;
+    }
 
     BRAKE = LT && RT;                    // 两个扳机键同时按下开启刹车
     REVERSING_LIGHT = HOLD_LT ? 150 : 0; // 倒车灯
 
-    digitalWrite(PIN_MOVE_R, (bool)LT);
-    // LT按下反转马达
-    if (BRAKE)
+    if (BRAKE) // 刹车激活时对电机施加一个较小的反向电压
     {
-      if (HOLD_RT)
-      {
-        digitalWrite(PIN_MOVE_R, true);
-      }
-      if (HOLD_LT)
-      {
-        digitalWrite(PIN_MOVE_R, false);
-      }
-      ledcWrite(CHANNEL_MOVE, 10);
+      digitalWrite(PIN_MOVE_R, HOLD_RT);
+      ledcWrite(CHANNEL_MOVE, 30);
     }
     else
     {
-      ledcWrite(CHANNEL_MOVE, round((LT ? LT : RT) / 4)); // LT值优先
+      int value = round((HOLD_RT ? RT : LT) / 4);
+      digitalWrite(PIN_MOVE_R, (bool)REVERSING_LIGHT); // R/F
+      ledcWrite(CHANNEL_MOVE, value);                  // motor
     }
 
     vTaskDelay(1);
@@ -93,7 +91,7 @@ void TaskMove(void *pt)
       Serial.print("Move : ");
       Serial.print(round((LT ? LT : RT) / 4));
       Serial.print(", R : ");
-      Serial.print((bool)LT);
+      Serial.print(digitalRead(PIN_MOVE_R));
       Serial.print(", fq : ");
       Serial.print(ledcRead(CHANNEL_MOVE));
       Serial.print(", H RT ");
