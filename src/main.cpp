@@ -11,12 +11,12 @@ XboxController Controller;
 #define CHANNEL_MOVE 4 // 马达驱动 pwm 通道
 #define PIN_TURN 18    // 转向控制
 
-#define PIN_HEADLIGHT 21       // 大灯
+#define PIN_HEADLIGHT 13       // 大灯
 #define PIN_STOPLIGHT 27       // 刹车灯
 #define PIN_STATUSLIGHT 23     // 状态灯
 #define PIN_REVERSING_LIGHT 26 // 倒车灯
-#define PIN_L_LIGHT 25         // 左转向灯
-#define PIN_R_LIGHT 33         // 右转向灯
+#define PIN_L_LIGHT 33         // 左转向灯
+#define PIN_R_LIGHT 25         // 右转向灯
 
 // PWM 通道
 #define CHANNEL_LIGHT_L 2         // 左转向灯
