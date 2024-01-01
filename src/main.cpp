@@ -84,7 +84,7 @@ void TaskMove(void *pt)
     if (BRAKE) // 刹车激活时对电机施加一个较小的反向电压
     {
       digitalWrite(PIN_MOVE_R, HOLD_RT);
-      ledcWrite(CHANNEL_MOVE, 30);
+      ledcWrite(CHANNEL_MOVE, 20);
     }
     else
     {
@@ -246,8 +246,8 @@ void TaskLightControll(void *pt)
     }
 
     HeadLight = DISTANT_LIGHT ? 255
-                : LOW_BEAM    ? 100
-                : WIDTH_LAMP  ? 30
+                : LOW_BEAM    ? 50
+                : WIDTH_LAMP  ? 5
                               : 0;
 
     StopLight = BRAKE        ? 255
