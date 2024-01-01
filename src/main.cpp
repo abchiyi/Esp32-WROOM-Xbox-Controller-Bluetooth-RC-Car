@@ -1,31 +1,32 @@
 #include <Arduino.h>
 
+#include <ESP32Servo.h>
 #include <VehicleLight.h>
 // #include <VehicleControl.h>
 #include <XboxController.h>
 
+Servo TurnServo;
 XboxController Controller;
 
 // 定义控制 Pin
-#define PIN_MOVE 32    // 移动控制
-#define PIN_MOVE_R 33  // 倒车控制
+#define PIN_MOVE 17    // 移动控制
+#define PIN_MOVE_R 16  // 倒车控制
 #define CHANNEL_MOVE 4 // 马达驱动 pwm 通道
-#define PIN_TURN 12    // 转向控制
+#define PIN_TURN 18    // 转向控制
 
-#define PIN_STATUSLIGHT 25 // 状态灯
-#define CHANNEL_STATUSLIGHT 1
+#define PIN_HEADLIGHT 21       // 大灯
+#define PIN_STOPLIGHT 27       // 刹车灯
+#define PIN_STATUSLIGHT 23     // 状态灯
+#define PIN_REVERSING_LIGHT 26 // 倒车灯
+#define PIN_L_LIGHT 25         // 左转向灯
+#define PIN_R_LIGHT 33         // 右转向灯
 
-#define PIN_HEADLIGHT 21    // 大灯
-#define CHANNEL_HEADLIGHT 6 // 大灯PWM通道
-
-#define PIN_STOPLIGHT 22    // 刹车灯
-#define CHANNEL_STOPLIGHT 7 // 刹车灯PWM通道
-
-#define PIN_REVERSING_LIGHT 23    // 倒车灯
+// PWM 通道
+#define CHANNEL_HEADLIGHT 6       // 大灯PWM通道
+#define CHANNEL_STOPLIGHT 7       // 刹车灯PWM通道
+#define CHANNEL_STATUSLIGHT 1     // 状态灯
 #define CHANNEL_REVERSING_LIGHT 8 // 倒车灯PWM通道
 
-#define PIN_L_LIGHT 25 // 左转向灯
-#define PIN_R_LIGHT 26 // 右转向灯
 #define CHANNEL_LIGHT_L 2
 #define CHANNEL_LIGHT_R 3
 
@@ -86,35 +87,83 @@ void TaskMove(void *pt)
     }
 
     vTaskDelay(1);
-    if (Controller.connected)
+    // if (Controller.connected)
+    // {
+    //   Serial.print("Move : ");
+    //   Serial.print(round((LT ? LT : RT) / 4));
+    //   Serial.print(", R : ");
+    //   Serial.print(digitalRead(PIN_MOVE_R));
+    //   Serial.print(", fq : ");
+    //   Serial.print(ledcRead(CHANNEL_MOVE));
+    //   Serial.print(", H RT ");
+    //   Serial.print(HOLD_RT);
+    //   Serial.print(", H LT ");
+    //   Serial.println(HOLD_LT);
+    // }
+  }
+}
+
+void TaskTurn(void *pt)
+{
+  const int width = 65535;
+  const int deadZone = 4500;
+  const int LStart = width / 2 - deadZone / 2;
+  const int RStart = width / 2 + deadZone / 2;
+  const int JoyLength = 256;
+
+  int joy = 0;
+
+  while (true)
+  {
+    joy = Controller.data.joyLHori;
+
+    // joy 的值不在死区范围内时执行转向动作
+    if (joy <= LStart || joy >= RStart)
     {
-      Serial.print("Move : ");
-      Serial.print(round((LT ? LT : RT) / 4));
-      Serial.print(", R : ");
-      Serial.print(digitalRead(PIN_MOVE_R));
-      Serial.print(", fq : ");
-      Serial.print(ledcRead(CHANNEL_MOVE));
-      Serial.print(", H RT ");
-      Serial.print(HOLD_RT);
-      Serial.print(", H LT ");
-      Serial.println(HOLD_LT);
+      // 计算打杆量
+      int t_joy = joy <= LStart ? joy : joy - deadZone;
+      int value = round(double(t_joy) * (double(JoyLength) / double(LStart)));
+
+      // 转换杆量为角度
+      double step = 90.000 / double(JoyLength);
+      int ang = 180 - value * step;
+
+      // 写入角度
+      TurnServo.write(ang);
+      if (Controller.connected)
+      {
+        Serial.print("Ang : ");
+        Serial.println(ang);
+      }
     }
+    else // 在死区内时回正
+    {
+      TurnServo.write(90);
+      if (Controller.connected)
+      {
+        Serial.print("Ang : ");
+        Serial.println("---");
+      }
+    }
+
+    vTaskDelay(1);
   }
 }
 
 void VehicleControlSetup(void *controller, int channelTurn, int servoPin, int channelMove, int motorPin, int motorPinR)
 {
-
-  // servo.setPeriodHertz(50);
-  // servo.attach(servoPin, 50, 2500);
-
+  // 设置马达
   ledcSetup(channelMove, 2000, 8);
   ledcAttachPin(motorPin, channelMove);
 
-  // xTaskCreate(TaskTurn, "Turn", 2048, (void *)&data, 2, NULL);
+  // 设置舵机
+  TurnServo.setPeriodHertz(50);
+  TurnServo.attach(servoPin, 50, 2500);
+
+  xTaskCreate(TaskTurn, "Turn", 2048, NULL, 2, NULL);
   xTaskCreate(TaskMove, "Move", 2048, NULL, 2, NULL);
 }
-/* 灯光任务 */
+/* 灯光任务 大灯，倒车灯，刹车灯*/
 void TaskLight(void *pt)
 {
   while (true)
@@ -126,7 +175,7 @@ void TaskLight(void *pt)
   }
 }
 
-/* 灯光控制任务 */
+/* 灯光控制任务  */
 void TaskLightControll(void *pt)
 {
   bool changed = false;
